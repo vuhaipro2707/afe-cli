@@ -258,9 +258,16 @@ if [[ -n "\$ZSH_VERSION" ]]; then
   _save_last_cmd() {
     local cmd="\$1"
     cmd=\$(echo "\$cmd" | head -n 1 | sed 's/^[[:space:]]*//')
-    if [[ -n "\$cmd" && "\$cmd" != ($CMD_A|$CMD_AL|$CMD_ALT|$CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_E|$CMD_EL|afe-help|ai-help|ai)(\ *|\$) ]]; then
-      export LAST_TERMINAL_CMD="\$cmd"
-    fi
+    local first_word="\${cmd%% *}"
+    case "\$first_word" in
+      $CMD_A|$CMD_AL|$CMD_ALT|$CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_E|$CMD_EL|afe-help|ai-help|ai)
+        ;;
+      *)
+        if [[ -n "\$cmd" ]]; then
+          export LAST_TERMINAL_CMD="\$cmd"
+        fi
+        ;;
+    esac
   }
   add-zsh-hook preexec _save_last_cmd 2>/dev/null || true
 fi
