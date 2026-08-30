@@ -148,14 +148,9 @@ Your settings are securely stored in your shell profile (`~/.zshrc` or `~/.bashr
 
 To completely remove AFE CLI and restore your shell to its original state:
 
-- **macOS**:
-  ```bash
-  bash uninstall_macos.sh
-  ```
-- **Linux**:
-  ```bash
-  bash uninstall_linux.sh
-  ```
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/install.sh)" -- uninstall
+```
 
 ---
 
