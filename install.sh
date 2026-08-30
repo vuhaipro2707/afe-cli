@@ -78,14 +78,14 @@ if [ "$ACTION" = "install" ]; then
     if [ -f "$SCRIPT_DIR/macos.sh" ]; then
       bash "$SCRIPT_DIR/macos.sh"
     else
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/macos.sh)"
+      /bin/bash -c "$(curl -fsSL -H 'Cache-Control: no-cache' "https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/macos.sh?$(date +%s)")"
     fi
   elif [ "$OS_TYPE" = "Linux" ]; then
     echo "🐧 Starting AFE CLI Installation for Linux..."
     if [ -f "$SCRIPT_DIR/linux.sh" ]; then
       bash "$SCRIPT_DIR/linux.sh"
     else
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/linux.sh)"
+      /bin/bash -c "$(curl -fsSL -H 'Cache-Control: no-cache' "https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/linux.sh?$(date +%s)")"
     fi
   fi
 elif [ "$ACTION" = "uninstall" ]; then
@@ -94,14 +94,14 @@ elif [ "$ACTION" = "uninstall" ]; then
     if [ -f "$SCRIPT_DIR/uninstall_macos.sh" ]; then
       bash "$SCRIPT_DIR/uninstall_macos.sh"
     else
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/uninstall_macos.sh)"
+      /bin/bash -c "$(curl -fsSL -H 'Cache-Control: no-cache' "https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/uninstall_macos.sh?$(date +%s)")"
     fi
   elif [ "$OS_TYPE" = "Linux" ]; then
     echo "🐧 Starting AFE CLI Uninstallation for Linux..."
     if [ -f "$SCRIPT_DIR/uninstall_linux.sh" ]; then
       bash "$SCRIPT_DIR/uninstall_linux.sh"
     else
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/uninstall_linux.sh)"
+      /bin/bash -c "$(curl -fsSL -H 'Cache-Control: no-cache' "https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/uninstall_linux.sh?$(date +%s)")"
     fi
   fi
 fi
