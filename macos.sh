@@ -4,7 +4,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
 AFE_VERSION="1.1.4"
 if [ -f "$SCRIPT_DIR/version" ]; then
-  AFE_VERSION="1.1.4"
+  AFE_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/version")"
+else
+  REMOTE_VER="$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/version 2>/dev/null | tr -d '[:space:]' || true)"
+  if [ -n "$REMOTE_VER" ]; then
+    AFE_VERSION="$REMOTE_VER"
+  fi
 fi
 echo "$AFE_VERSION" > "$HOME/.afe_version" 2>/dev/null || true
 

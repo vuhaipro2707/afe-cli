@@ -64,7 +64,13 @@ echo "--------------------------------------------------"
 echo "$NEW_VERSION" > "$VERSION_FILE"
 echo "✅ Updated $VERSION_FILE"
 
-# 2. Update default fallback versions in macos.sh & linux.sh
+# 2. Update default fallback versions in install.sh, macos.sh & linux.sh
+if [ -f "$SCRIPT_DIR/install.sh" ]; then
+  sed -i '' "s/AVAILABLE_VERSION=\".*\"/AVAILABLE_VERSION=\"$NEW_VERSION\"/g" "$SCRIPT_DIR/install.sh" 2>/dev/null || \
+  sed -i "s/AVAILABLE_VERSION=\".*\"/AVAILABLE_VERSION=\"$NEW_VERSION\"/g" "$SCRIPT_DIR/install.sh" 2>/dev/null || true
+  echo "✅ Updated install.sh"
+fi
+
 if [ -f "$SCRIPT_DIR/macos.sh" ]; then
   sed -i '' "s/AFE_VERSION=\".*\"/AFE_VERSION=\"$NEW_VERSION\"/g" "$SCRIPT_DIR/macos.sh" 2>/dev/null || \
   sed -i "s/AFE_VERSION=\".*\"/AFE_VERSION=\"$NEW_VERSION\"/g" "$SCRIPT_DIR/macos.sh" 2>/dev/null || true
@@ -72,6 +78,7 @@ if [ -f "$SCRIPT_DIR/macos.sh" ]; then
 fi
 
 if [ -f "$SCRIPT_DIR/linux.sh" ]; then
+  sed -i '' "s/AFE_VERSION=\".*\"/AFE_VERSION=\"$NEW_VERSION\"/g" "$SCRIPT_DIR/linux.sh" 2>/dev/null || \
   sed -i "s/AFE_VERSION=\".*\"/AFE_VERSION=\"$NEW_VERSION\"/g" "$SCRIPT_DIR/linux.sh" 2>/dev/null || true
   echo "✅ Updated linux.sh"
 fi
