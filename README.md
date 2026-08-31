@@ -16,7 +16,8 @@
   - **Cloud Mode**: Ultra-fast responses powered by **Google Gemini API** (Streaming output, minimal latency).
   - **Local Mode**: 100% private, offline assistant powered by **Ollama** (e.g., `gemma4:e2b`, `qwen2.5-coder`).
 - ⌨️ **Smart Paste (`Ctrl + G`)**: Instantly pastes the generated command directly at your cursor position—no mouse copy-pasting required.
-- 🛡️ **Collision-Proof**: Automatically detects if short command names (`a`, `f`, `fe`, `e`) already exist on your system and falls back to safe prefixes (`afe-a`, `afe-f`, etc.).
+- 🛡️ **Collision-Proof**: Automatically detects if short command names (`a`, `f`, `fe`, `e`, `q`) already exist on your system and falls back to safe prefixes (`afe-a`, `afe-f`, etc.).
+- ⚠️ **Safety Guard**: Automatically detects destructive or risky commands (`rm -rf`, `mkfs`, `dd`, `DROP TABLE`, `git reset --hard`) and displays caution warnings in real-time.
 - 🌐 **Multilingual Support**: Supports English, Vietnamese, or any custom language for technical explanations.
 - 🪶 **100% Pure Shell**: Zero background daemon overhead, zero RAM consumption when idle, instant shell startup (0ms).
 

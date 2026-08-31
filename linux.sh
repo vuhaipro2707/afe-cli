@@ -179,18 +179,16 @@ TEMPLATE {{ .Prompt }}
 SYSTEM "
 You are an expert DevOps engineer and Linux terminal assistant.
 
-CORE OBJECTIVE:
-When an error occurs, analyze the root cause from the terminal output. Provide the exact command needed to resolve the missing dependency, system state, or permission constraint so that the user's intended original command can succeed.
-
 RULES:
-1. When mode is [ERROR FIX MODE]:
+1. When fixing errors or generating terminal commands:
    - Output ONLY the single raw executable shell command.
-   - Do NOT use markdown code blocks.
-   - Do NOT output explanations or any extra text.
+   - Do NOT use markdown code blocks or backticks.
+   - Output fully resolved, concrete commands using context values. Never use nested subshells to re-evaluate context.
+   - Do NOT output explanations, conversational text, or status claims (never say 'Already done' or 'Success').
    - Resolve the root cause (environment, dependencies, permissions, resources, syntax).
-   - Do NOT rewrite or bypass the user's intent unless the original syntax itself was wrong.
-2. When mode is [Q&A ANALYSIS MODE] or user request:
-   - Answer directly, clearly, and concisely in $AI_RESPONSE_LANG based on the context and user request.
+2. When answering user requests, questions, or queries:
+   - Directly execute the user request using the provided context or piped data.
+   - Match the requested format and language strictly.
    - Output clean plain text without markdown backticks, bold asterisks, or headings. Use '-' for bullet points.
 3. Default to Linux (GNU tools) syntax.
 "
@@ -303,7 +301,7 @@ _build_fix_prompt() {
   if [[ -z "\$last_cmd" ]]; then
     if [[ -n "\$ZSH_VERSION" ]]; then
       last_cmd=\$(fc -ln -1 2>/dev/null | sed -E 's/^[[:space:]\x00-\x1F]+//')
-      if [[ "\$last_cmd" =~ ^($CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_A|$CMD_AL|$CMD_ALT|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe-help|ai-help|ai)($|[[:space:]]) ]]; then
+      if [[ "\$last_cmd" =~ ^($CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_A|$CMD_AL|$CMD_ALT|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe|afe-help|ai-help|ai)($|[[:space:]]) ]]; then
         last_cmd=\$(fc -ln -2 2>/dev/null | head -n 1 | sed -E 's/^[[:space:]\x00-\x1F]+//')
       fi
     else
@@ -314,20 +312,18 @@ _build_fix_prompt() {
   local output_data=\$(_get_terminal_screen_buffer | sed -E \$'s/\x1B\\[[0-9;]*[a-zA-Z]//g')
 
   if [[ -z "\$query" ]]; then
-    echo "[ERROR FIX MODE]
-Failed command: \$last_cmd
-Terminal context:
+    echo "Recent terminal context:
 \$output_data
+Last executed command: \$last_cmd
 
-Output ONLY the exact raw fixed Linux shell command. No markdown."
+Task: Output ONLY the exact raw fixed Linux shell command to resolve the error. No markdown, no explanations."
   else
-    echo "[Q&A ANALYSIS MODE]
-Executed command: \$last_cmd
-Terminal context:
+    echo "Recent terminal context:
 \$output_data
+Last executed command: \$last_cmd
+User instruction: \$query
 
-User question: \$query
-Answer directly and concisely in \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG} based on the context."
+Task: Generate the exact raw executable Linux shell command to fulfill the user instruction. Use concrete values and text from the context. Do NOT use nested subshells to re-evaluate prior steps."
   fi
 }
 
@@ -339,17 +335,20 @@ _build_query_prompt() {
   fi
 
   if [[ -n "\$stdin_data" ]]; then
-    echo "[PIPED INPUT DATA]
+    echo "[USER REQUEST / INSTRUCTION]
+\$query
+
+[PIPED INPUT DATA]
 \$stdin_data
 
-[USER REQUEST]
+[REMINDER: FULFILL THIS USER REQUEST IN THE REQUESTED LANGUAGE]
 \$query"
   else
     local last_cmd="\$LAST_TERMINAL_CMD"
     if [[ -z "\$last_cmd" ]]; then
       if [[ -n "\$ZSH_VERSION" ]]; then
         last_cmd=\$(fc -ln -1 2>/dev/null | sed -E 's/^[[:space:]\x00-\x1F]+//')
-        if [[ "\$last_cmd" =~ ^($CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_A|$CMD_AL|$CMD_ALT|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe-help|ai-help|ai)($|[[:space:]]) ]]; then
+        if [[ "\$last_cmd" =~ ^($CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_A|$CMD_AL|$CMD_ALT|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe|afe-help|ai-help|ai)($|[[:space:]]) ]]; then
           last_cmd=\$(fc -ln -2 2>/dev/null | head -n 1 | sed -E 's/^[[:space:]\x00-\x1F]+//')
         fi
       else
@@ -360,13 +359,13 @@ _build_query_prompt() {
     local output_data=\$(_get_terminal_screen_buffer | sed -E \$'s/\x1B\\[[0-9;]*[a-zA-Z]//g')
 
     if [[ -n "\$output_data" || -n "\$last_cmd" ]]; then
-      echo "[RECENT TERMINAL CONTEXT]
+      echo "[USER REQUEST / INSTRUCTION]
+\$query
+
+[RECENT TERMINAL CONTEXT]
 Last command: \$last_cmd
 Recent screen output:
-\$output_data
-
-[USER REQUEST]
-\$query"
+\$output_data"
     else
       echo "\$query"
     fi
@@ -374,6 +373,13 @@ Recent screen output:
 }
 
 LAST_AI_OUTPUT=""
+
+_check_dangerous_cmd() {
+  local cmd="\$1"
+  if echo "\$cmd" | grep -qiE '(rm[[:space:]]+.*-[a-zA-Z]*[rR]|mkfs|dd[[:space:]]+.*if=|fdisk|parted|wipefs|DROP[[:space:]]+(DATABASE|TABLE)|TRUNCATE[[:space:]]+TABLE|chmod[[:space:]]+.*-[a-zA-Z]*[rR].*777|git[[:space:]]+push[[:space:]].*(--force|-f\b)|git[[:space:]]+reset[[:space:]]+--hard|>[[:space:]]*/dev/(sd|nvme|disk|hd))'; then
+    printf "\033[1;33m⚠️  [CAUTION: This command can modify, overwrite, or delete critical data!]\033[0m\n" >&2
+  fi
+}
 
 _insert_last_ai_cmd() {
   if [[ -n "\$LAST_AI_OUTPUT" ]]; then
@@ -429,8 +435,21 @@ afe-help() {
 ────────────────────────────────────────────────────────────────────────────
 HELP_EOF
 }
+afe() {
+  case "\$1" in
+    -v|--version|version)
+      afe-version
+      ;;
+    -u|--update|update)
+      afe-update
+      ;;
+    *)
+      afe-help
+      ;;
+  esac
+}
 alias ai-help=afe-help
-alias ai=afe-help
+alias ai=afe
 
 afe-version() {
   echo "🚀 AFE CLI v$AFE_VERSION"
@@ -481,6 +500,7 @@ $CMD_AL() {
   ollama run ask-cli --think=false "\$query" | tee "\$tmp_file"
   LAST_AI_OUTPUT=\$(<"\$tmp_file")
   rm -f "\$tmp_file"
+  _check_dangerous_cmd "\$LAST_AI_OUTPUT"
 }
 
 $CMD_ALT() {
@@ -491,6 +511,7 @@ $CMD_ALT() {
   ollama run ask-cli "\$query" | _ollama_live_stream | tee "\$tmp_file"
   LAST_AI_OUTPUT=\$(<"\$tmp_file")
   rm -f "\$tmp_file"
+  _check_dangerous_cmd "\$LAST_AI_OUTPUT"
 }
 
 $CMD_FL() {
@@ -500,6 +521,7 @@ $CMD_FL() {
   ollama run fix-cli --think=false "\$prompt" | tee "\$tmp_file"
   LAST_AI_OUTPUT=\$(<"\$tmp_file")
   rm -f "\$tmp_file"
+  _check_dangerous_cmd "\$LAST_AI_OUTPUT"
 }
 
 $CMD_FLT() {
@@ -509,6 +531,7 @@ $CMD_FLT() {
   ollama run fix-cli "\$prompt" | _ollama_live_stream | tee "\$tmp_file"
   LAST_AI_OUTPUT=\$(<"\$tmp_file")
   rm -f "\$tmp_file"
+  _check_dangerous_cmd "\$LAST_AI_OUTPUT"
 }
 
 $CMD_EL() {
@@ -625,16 +648,22 @@ $CMD_A() {
   _call_gemini_api "\$sys_prompt" "\$query" | tee "\$tmp_file"
   LAST_AI_OUTPUT=\$(<"\$tmp_file")
   rm -f "\$tmp_file"
+  _check_dangerous_cmd "\$LAST_AI_OUTPUT"
 }
 
 $CMD_F() {
   [[ "\$1" == "-h" || "\$1" == "--help" ]] && { afe-help; return 0; }
   local prompt="\$(_build_fix_prompt "\$*")"
-  local sys_prompt="You are a Linux terminal command generator. Output ONLY the single raw executable shell command to fix the issue or satisfy the request. No markdown, no backticks, no explanations, no conversational text."
+  local sys_prompt="You are an expert Linux terminal command generator.
+STRICT RULES:
+- Output ONLY the single raw executable shell command.
+- Concrete Execution: Always output fully resolved, concrete commands. Extract and embed any needed values, strings, IDs, or text directly from the screen context. Never use nested subshells to re-evaluate context.
+- Zero Chatter: NO conversational text, NO status messages (never claim 'Already done' or 'Success'), NO explanations, NO markdown."
   local tmp_file=\$(mktemp)
   _call_gemini_api "\$sys_prompt" "\$prompt" | tee "\$tmp_file"
   LAST_AI_OUTPUT=\$(<"\$tmp_file")
   rm -f "\$tmp_file"
+  _check_dangerous_cmd "\$LAST_AI_OUTPUT"
 }
 
 $CMD_FE() {
@@ -688,14 +717,17 @@ $CMD_Q() {
     return 1
   fi
   local prompt="\$(_build_query_prompt "\$*")"
-  local sys_prompt="You are a high-efficiency Linux consultant and DevOps engineer.
-STRICT RESPONSE RULES:
-- Direct & Focused: Go straight to the answer. NO greetings, NO pleasantries, NO intro filler, and NO outro boilerplate.
-- Clean Terminal Text: Output clean, human-readable text for terminal. STRICTLY PROHIBITED: NO markdown headings, NO bold asterisks, NO code blocks.
-- Structure: Use clean dashes '-' for bullet lists and plain indented text for command lines or comparisons.
-- High Density & Conciseness: Deliver maximum value with minimal words. Be concise and crisp, retaining essential technical facts, exact commands, or core trade-offs.
-- Synthesis / Context: If piped data or terminal output is given, filter out noise and extract only key findings, errors, or requested points directly.
-- Language: \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG}."
+  local sys_prompt="You are an expert DevOps assistant and software engineer.
+LANGUAGE RULES (STRICT & ABSOLUTE):
+- If the user request mentions Vietnamese / tiếng Việt, you MUST output 100% in Vietnamese (including commit title and all bullet points).
+- If the user request mentions English / tiếng Anh, you MUST output 100% in English.
+- If no specific language is requested, default to \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG}.
+
+CORE INSTRUCTIONS:
+- Directly execute the exact USER REQUEST using the provided terminal context / piped data.
+- If asked to write a git commit message, output ONLY the conventional commit message (1 title line, 1 empty line, bullet points description). Never output intro analysis or section headers.
+- If asked a technical question or comparison, answer directly with crisp bullet points.
+- STRICT FORMAT: NO greetings, NO intro fluff, NO boilerplate. STRICTLY NO markdown headings, NO bold asterisks, NO code blocks. Output clean terminal plain text."
   _call_gemini_api "\$sys_prompt" "\$prompt"
 }
 EOF
