@@ -1,9 +1,41 @@
 #!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
+
+# 1. Detect Available Version
+AVAILABLE_VERSION="1.1.0"
+if [ -f "$SCRIPT_DIR/version" ]; then
+  AVAILABLE_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/version")"
+fi
+
+# 2. Detect Installed Version on machine
+INSTALLED_VERSION=""
+if [ -f "$HOME/.afe_version" ]; then
+  INSTALLED_VERSION="$(tr -d '[:space:]' < "$HOME/.afe_version")"
+elif [ -f "$HOME/.zshrc" ] && grep -q "export AFE_CLI_VERSION=" "$HOME/.zshrc" 2>/dev/null; then
+  INSTALLED_VERSION="$(grep -E '^export AFE_CLI_VERSION=' "$HOME/.zshrc" | cut -d '=' -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
+elif [ -f "$HOME/.bashrc" ] && grep -q "export AFE_CLI_VERSION=" "$HOME/.bashrc" 2>/dev/null; then
+  INSTALLED_VERSION="$(grep -E '^export AFE_CLI_VERSION=' "$HOME/.bashrc" | cut -d '=' -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
+fi
+
 echo "=================================================="
 echo "           🚀 AFE CLI Universal Manager          "
 echo "=================================================="
+
+if [ -z "$INSTALLED_VERSION" ]; then
+  echo "  📌 Installed Version: Not installed"
+  echo "  ✨ Available Version: v$AVAILABLE_VERSION"
+  ACTION_LABEL="🚀 Install AFE CLI (v$AVAILABLE_VERSION)"
+elif [ "$INSTALLED_VERSION" = "$AVAILABLE_VERSION" ]; then
+  echo "  ✅ Installed Version: v$INSTALLED_VERSION (Latest)"
+  ACTION_LABEL="🔄 Reinstall / Repair AFE CLI (v$AVAILABLE_VERSION)"
+else
+  echo "  📌 Installed Version: v$INSTALLED_VERSION"
+  echo "  ✨ Available Version: v$AVAILABLE_VERSION  (Update available!)"
+  ACTION_LABEL="🚀 Update AFE CLI (v$INSTALLED_VERSION -> v$AVAILABLE_VERSION)"
+fi
+echo "--------------------------------------------------"
 
 OS_TYPE="$(uname -s)"
 if [ "$OS_TYPE" != "Darwin" ] && [ "$OS_TYPE" != "Linux" ]; then
@@ -17,7 +49,7 @@ ACTION="$1"
 if [ -z "$ACTION" ]; then
   echo ""
   echo "Please choose an action:"
-  echo "  1) 🚀 Install / Update AFE CLI"
+  echo "  1) $ACTION_LABEL"
   echo "  2) 🗑️  Uninstall AFE CLI"
   echo "  3) 🚪 Exit"
   echo ""
@@ -45,7 +77,7 @@ if [ -z "$ACTION" ]; then
       exit 0
       ;;
     *)
-      echo "⚠️  Invalid choice '$USER_CHOICE'. Defaulting to Install."
+      echo "⚠️  Invalid choice '$USER_CHOICE'. Defaulting to Option 1."
       ACTION="install"
       ;;
   esac

@@ -66,6 +66,7 @@ Run `afe-help` (or `ai-help` / `ai`) at any time to view the interactive manual:
     f [question]      Generate fix command for the last failed command
     fe [question]     Explain root cause & fix for the last error concisely
     e [command]       Explain command manual (default: last AI generated cmd)
+    q <request>       Query, analyze context/logs, or synthesize knowledge
 
   💻 Local Commands (Ollama Offline):
     al <request>      Generate command using Ollama local model
@@ -73,13 +74,18 @@ Run `afe-help` (or `ai-help` / `ai`) at any time to view the interactive manual:
     fl [question]     Generate fix command using Ollama local
     flt [question]    Generate fix command with live thinking stream
     el [command]      Explain command manual using Ollama local
+    ql <request>      Query & synthesize using Ollama local model
+    qlt <request>     Query & synthesize with live thinking stream
 
   ⌨️  Shortcuts & Tips:
     Ctrl + G          Paste last AI generated command at cursor position
     e / el (no args)  Directly explain the command that AI just suggested
+    <cmd> | q <req>   Pipe logs/diff/output directly into AI query
 
   ℹ️  Help & Info:
     afe-help          Display this help message
+    afe-version       Display installed version (or 'afe -v')
+    afe-update        Update AFE CLI to latest release
 ────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -130,6 +136,20 @@ find . -type f -size +100M
 $ e                  <-- Automatically explains the command above!
 ```
 
+### 5. Query, Synthesize & Pipe Data (Free-Form Q&A)
+```bash
+# Ask general technical questions or ask for comparisons:
+$ q so sánh ưu nhược điểm giữa Docker Swarm và Kubernetes
+
+# Automatically synthesize the output of the command you just ran:
+$ terraform plan
+$ q tổng hợp những tài nguyên nào sẽ bị thay đổi hoặc recreate
+
+# Pipe file logs or git diff directly into AI:
+$ cat server.log | q "tổng hợp top 5 lỗi nghiêm trọng nhất"
+$ git diff HEAD~1 | q "viết tóm tắt release notes ngắn gọn"
+```
+
 ---
 
 ## ⚙️ Configuration
@@ -141,6 +161,18 @@ Your settings are securely stored in your shell profile (`~/.zshrc` or `~/.bashr
 | `GEMINI_API_KEY` | `~/.env` | Your Google Gemini API Key (chmod 600) |
 | `GEMINI_MODEL_ID` | `~/.zshrc` / `~/.bashrc` | Cloud model (default: `gemma-4-26b-a4b-it`) |
 | `AI_RESPONSE_LANG` | `~/.zshrc` / `~/.bashrc` | Response language (`English`, `Vietnamese`, etc.) |
+
+---
+
+## 🏷️ Release & Versioning (For Maintainers)
+
+Bump version with 1 command (automatically updates `version`, shell files, creates git commit & tag):
+
+```bash
+./bump.sh patch   # 1.1.0 -> 1.1.1 (Bug fixes)
+./bump.sh minor   # 1.1.0 -> 1.2.0 (New features)
+./bump.sh major   # 1.1.0 -> 2.0.0 (Breaking changes)
+```
 
 ---
 

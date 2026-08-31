@@ -57,6 +57,9 @@ if [ -f "$ENV_FILE" ]; then
   fi
 fi
 
+# 3. Clean up version tracking file
+rm -f "$HOME/.afe_version"
+
 echo "=== [3/3] Uninstallation Complete! ==="
 echo "To apply changes in your current terminal session, run:"
 echo "source ~/.zshrc"

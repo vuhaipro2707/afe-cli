@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
+AFE_VERSION="1.1.0"
+if [ -f "$SCRIPT_DIR/version" ]; then
+  AFE_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/version")"
+fi
+echo "$AFE_VERSION" > "$HOME/.afe_version" 2>/dev/null || true
+
 echo "=== [1/4] Checking Linux environment & dependencies ==="
 
 # Install curl, python3 if missing
@@ -106,13 +113,16 @@ CMD_A=$(check_collision "a")
 CMD_F=$(check_collision "f")
 CMD_FE=$(check_collision "fe")
 CMD_E=$(check_collision "e")
+CMD_Q=$(check_collision "q")
 
 CMD_AL=$(check_collision "al")
 CMD_ALT=$(check_collision "alt")
 CMD_FL=$(check_collision "fl")
 CMD_FLT=$(check_collision "flt")
 CMD_EL=$(check_collision "el")
-echo "Resolved command names: Cloud=[$CMD_A, $CMD_F, $CMD_FE, $CMD_E], Local=[$CMD_AL, $CMD_ALT, $CMD_FL, $CMD_FLT, $CMD_EL]"
+CMD_QL=$(check_collision "ql")
+CMD_QLT=$(check_collision "qlt")
+echo "Resolved command names: Cloud=[$CMD_A, $CMD_F, $CMD_FE, $CMD_E, $CMD_Q], Local=[$CMD_AL, $CMD_ALT, $CMD_FL, $CMD_FLT, $CMD_EL, $CMD_QL, $CMD_QLT]"
 echo ""
 
 # --- Process Ollama if selected ---
@@ -179,8 +189,9 @@ RULES:
    - Do NOT output explanations or any extra text.
    - Resolve the root cause (environment, dependencies, permissions, resources, syntax).
    - Do NOT rewrite or bypass the user's intent unless the original syntax itself was wrong.
-2. When mode is [Q&A ANALYSIS MODE]:
-   - Answer directly and concisely in $AI_RESPONSE_LANG based strictly on the terminal output.
+2. When mode is [Q&A ANALYSIS MODE] or user request:
+   - Answer directly, clearly, and concisely in $AI_RESPONSE_LANG based on the context and user request.
+   - Output clean plain text without markdown backticks, bold asterisks, or headings. Use '-' for bullet points.
 3. Default to Linux (GNU tools) syntax.
 "
 RENDERER gemma4
@@ -244,6 +255,7 @@ fi
 cat <<EOF >> "$TARGET_RC"
 
 # --- AI CLI ASSISTANT BASE ---
+export AFE_CLI_VERSION="$AFE_VERSION"
 export AI_RESPONSE_LANG="$AI_RESPONSE_LANG"
 
 # Automatically load environment variables from ~/.env if it exists
@@ -260,7 +272,7 @@ if [[ -n "\$ZSH_VERSION" ]]; then
     cmd=\$(echo "\$cmd" | head -n 1 | sed 's/^[[:space:]]*//')
     local first_word="\${cmd%% *}"
     case "\$first_word" in
-      $CMD_A|$CMD_AL|$CMD_ALT|$CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_E|$CMD_EL|afe-help|ai-help|ai)
+      $CMD_A|$CMD_AL|$CMD_ALT|$CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe-help|ai-help|ai)
         ;;
       *)
         if [[ -n "\$cmd" ]]; then
@@ -291,7 +303,7 @@ _build_fix_prompt() {
   if [[ -z "\$last_cmd" ]]; then
     if [[ -n "\$ZSH_VERSION" ]]; then
       last_cmd=\$(fc -ln -1 2>/dev/null | sed -E 's/^[[:space:]\x00-\x1F]+//')
-      if [[ "\$last_cmd" =~ ^($CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_A|$CMD_AL|$CMD_ALT|$CMD_E|$CMD_EL|afe-help|ai-help|ai)($|[[:space:]]) ]]; then
+      if [[ "\$last_cmd" =~ ^($CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_A|$CMD_AL|$CMD_ALT|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe-help|ai-help|ai)($|[[:space:]]) ]]; then
         last_cmd=\$(fc -ln -2 2>/dev/null | head -n 1 | sed -E 's/^[[:space:]\x00-\x1F]+//')
       fi
     else
@@ -316,6 +328,48 @@ Terminal context:
 
 User question: \$query
 Answer directly and concisely in \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG} based on the context."
+  fi
+}
+
+_build_query_prompt() {
+  local query="\$*"
+  local stdin_data=""
+  if [ ! -t 0 ]; then
+    stdin_data=\$(head -n 500)
+  fi
+
+  if [[ -n "\$stdin_data" ]]; then
+    echo "[PIPED INPUT DATA]
+\$stdin_data
+
+[USER REQUEST]
+\$query"
+  else
+    local last_cmd="\$LAST_TERMINAL_CMD"
+    if [[ -z "\$last_cmd" ]]; then
+      if [[ -n "\$ZSH_VERSION" ]]; then
+        last_cmd=\$(fc -ln -1 2>/dev/null | sed -E 's/^[[:space:]\x00-\x1F]+//')
+        if [[ "\$last_cmd" =~ ^($CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_A|$CMD_AL|$CMD_ALT|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe-help|ai-help|ai)($|[[:space:]]) ]]; then
+          last_cmd=\$(fc -ln -2 2>/dev/null | head -n 1 | sed -E 's/^[[:space:]\x00-\x1F]+//')
+        fi
+      else
+        last_cmd=\$(HISTTIMEFORMAT= history 2 2>/dev/null | head -n 1 | sed 's/^[ ]*[0-9]*[ ]*//')
+      fi
+    fi
+
+    local output_data=\$(_get_terminal_screen_buffer | sed -E \$'s/\x1B\\[[0-9;]*[a-zA-Z]//g')
+
+    if [[ -n "\$output_data" || -n "\$last_cmd" ]]; then
+      echo "[RECENT TERMINAL CONTEXT]
+Last command: \$last_cmd
+Recent screen output:
+\$output_data
+
+[USER REQUEST]
+\$query"
+    else
+      echo "\$query"
+    fi
   fi
 }
 
@@ -352,6 +406,7 @@ afe-help() {
     $CMD_F [question]      Generate fix command for the last failed command
     $CMD_FE [question]     Explain root cause & fix for the last error concisely
     $CMD_E [command]       Explain command manual (default: last AI generated cmd)
+    $CMD_Q <request>       Query, analyze context/logs, or synthesize knowledge
 
   💻 Local Commands (Ollama Offline):
     $CMD_AL <request>      Generate command using Ollama local model
@@ -359,18 +414,33 @@ afe-help() {
     $CMD_FL [question]     Generate fix command using Ollama local
     $CMD_FLT [question]    Generate fix command with live thinking stream
     $CMD_EL [command]      Explain command manual using Ollama local
+    $CMD_QL <request>      Query & synthesize using Ollama local model
+    $CMD_QLT <request>     Query & synthesize with live thinking stream
 
   ⌨️  Shortcuts & Tips:
     Ctrl + G          Paste last AI generated command at cursor position
     $CMD_E / $CMD_EL (no args) Directly explain the command that AI just suggested
+    <cmd> | $CMD_Q <req>       Pipe logs/diff/output directly into AI query
 
   ℹ️  Help & Info:
     afe-help          Display this help message
+    afe-version       Display current installed version
+    afe-update        Update AFE CLI to latest version
 ────────────────────────────────────────────────────────────────────────────
 HELP_EOF
 }
 alias ai-help=afe-help
 alias ai=afe-help
+
+afe-version() {
+  echo "🚀 AFE CLI v$AFE_VERSION"
+}
+alias afe-v=afe-version
+
+afe-update() {
+  echo "🔄 Checking and updating AFE CLI..."
+  /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/install.sh)" -- install
+}
 EOF
 
 # 2. Write Ollama Block if selected
@@ -453,6 +523,28 @@ $CMD_EL() {
     fi
   fi
   ollama run ask-cli --think=false "Explain briefly in \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG} about the following command/concept: \$query"
+}
+
+$CMD_QL() {
+  [[ "\$1" == "-h" || "\$1" == "--help" ]] && { afe-help; return 0; }
+  local query="\$*"
+  if [ -t 0 ] && [[ -z "\$query" ]]; then
+    echo "Usage: $CMD_QL <request/question> (or 'afe-help' for help)"
+    return 1
+  fi
+  local prompt="\$(_build_query_prompt "\$*")"
+  ollama run fix-cli --think=false "\$prompt"
+}
+
+$CMD_QLT() {
+  [[ "\$1" == "-h" || "\$1" == "--help" ]] && { afe-help; return 0; }
+  local query="\$*"
+  if [ -t 0 ] && [[ -z "\$query" ]]; then
+    echo "Usage: $CMD_QLT <request/question> (or 'afe-help' for help)"
+    return 1
+  fi
+  local prompt="\$(_build_query_prompt "\$*")"
+  ollama run fix-cli "\$prompt" | _ollama_live_stream
 }
 EOF
 fi
@@ -550,11 +642,12 @@ $CMD_FE() {
   local prompt="\$(_build_fix_prompt "\$*")"
   local sys_prompt="You are an expert Linux terminal troubleshooting assistant.
 STRICT RULES:
+- Output clean terminal plain text. STRICTLY NO markdown headings, NO bold asterisks, NO backticks.
 - Be extremely concise, direct, and technical.
 - NO greetings, pleasantries, apologies, intros, or conversational filler.
 - Format:
-  1. Cause: 1 short sentence stating the root cause.
-  2. Fix: The exact Linux terminal command(s) needed.
+  Cause: 1 short sentence stating the root cause.
+  Fix: The exact Linux terminal command(s) needed.
 - Language: \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG}."
   _call_gemini_api "\$sys_prompt" "\$prompt"
 }
@@ -572,13 +665,37 @@ $CMD_E() {
   fi
   local sys_prompt="You are a concise Linux technical manual.
 STRICT RULES:
+- Output clean terminal plain text. STRICTLY NO markdown headings, NO bold asterisks, NO code blocks.
 - NEVER say hello, greetings, intros, outros, or pleasantries (No 'Hello', 'Hi', 'Hope this helps').
 - NO emojis, NO conversational fluff.
 - Jump STRAIGHT into the explanation.
 - Structure:
   1. One sentence explaining the overall purpose.
-  2. Bullet points breaking down flags/components directly.
+  2. Bullet points with '-' breaking down flags/components directly.
 - Language: \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG}, direct, concise, developer-oriented."
+  _call_gemini_api "\$sys_prompt" "\$prompt"
+}
+
+$CMD_Q() {
+  [[ "\$1" == "-h" || "\$1" == "--help" ]] && { afe-help; return 0; }
+  local query="\$*"
+  if [ -t 0 ] && [[ -z "\$query" ]]; then
+    echo "Usage: $CMD_Q <request/question> (or 'afe-help' for help)"
+    echo "Examples:"
+    echo "  $CMD_Q \"tổng hợp kết quả vừa chạy\""
+    echo "  cat server.log | $CMD_Q \"tổng hợp các lỗi nghiêm trọng\""
+    echo "  $CMD_Q so sánh Docker và Podman"
+    return 1
+  fi
+  local prompt="\$(_build_query_prompt "\$*")"
+  local sys_prompt="You are a high-efficiency Linux consultant and DevOps engineer.
+STRICT RESPONSE RULES:
+- Direct & Focused: Go straight to the answer. NO greetings, NO pleasantries, NO intro filler, and NO outro boilerplate.
+- Clean Terminal Text: Output clean, human-readable text for terminal. STRICTLY PROHIBITED: NO markdown headings, NO bold asterisks, NO code blocks.
+- Structure: Use clean dashes '-' for bullet lists and plain indented text for command lines or comparisons.
+- High Density & Conciseness: Deliver maximum value with minimal words. Be concise and crisp, retaining essential technical facts, exact commands, or core trade-offs.
+- Synthesis / Context: If piped data or terminal output is given, filter out noise and extract only key findings, errors, or requested points directly.
+- Language: \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG}."
   _call_gemini_api "\$sys_prompt" "\$prompt"
 }
 EOF
