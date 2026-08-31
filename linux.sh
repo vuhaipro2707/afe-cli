@@ -2,13 +2,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
-AFE_VERSION="1.1.4"
+AFE_VERSION="1.1.5"
 if [ -f "$SCRIPT_DIR/version" ]; then
-  AFE_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/version")"
+  AFE_VERSION="1.1.5"
 else
   REMOTE_VER="$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/version 2>/dev/null | tr -d '[:space:]' || true)"
   if [ -n "$REMOTE_VER" ]; then
-    AFE_VERSION="$REMOTE_VER"
+    AFE_VERSION="1.1.5"
   fi
 fi
 echo "$AFE_VERSION" > "$HOME/.afe_version" 2>/dev/null || true
@@ -681,9 +681,17 @@ STRICT RULES:
 - NO greetings, pleasantries, apologies, intros, or conversational filler.
 - Format:
   Cause: 1 short sentence stating the root cause.
-  Fix: The exact Linux terminal command(s) needed.
+  Fix: The exact single raw executable Linux terminal command needed.
 - Language: \${AI_RESPONSE_LANG:-$AI_RESPONSE_LANG}."
-  _call_gemini_api "\$sys_prompt" "\$prompt"
+  local tmp_file=\$(mktemp)
+  _call_gemini_api "\$sys_prompt" "\$prompt" | tee "\$tmp_file"
+  local full_output=\$(<"\$tmp_file")
+  rm -f "\$tmp_file"
+  local fix_cmd=\$(echo "\$full_output" | grep -iE '^[[:space:]]*Fix:[[:space:]]*' | sed -E 's/^[[:space:]]*[Ff][Ii][Xx]:[[:space:]]*//' | head -n 1)
+  if [[ -n "\$fix_cmd" ]]; then
+    LAST_AI_OUTPUT="\$fix_cmd"
+    _check_dangerous_cmd "\$LAST_AI_OUTPUT"
+  fi
 }
 
 $CMD_E() {

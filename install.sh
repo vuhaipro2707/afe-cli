@@ -4,13 +4,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
 
 # 1. Detect Available Version
-AVAILABLE_VERSION="1.1.4"
+AVAILABLE_VERSION="1.1.5"
 if [ -f "$SCRIPT_DIR/version" ]; then
-  AVAILABLE_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/version")"
+  AVAILABLE_VERSION="1.1.5"
 else
   REMOTE_VER="$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/version 2>/dev/null | tr -d '[:space:]' || true)"
   if [ -n "$REMOTE_VER" ]; then
-    AVAILABLE_VERSION="$REMOTE_VER"
+    AVAILABLE_VERSION="1.1.5"
   fi
 fi
 
