@@ -2,13 +2,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
-AFE_VERSION="1.1.5"
+AFE_VERSION="1.1.6"
 if [ -f "$SCRIPT_DIR/version" ]; then
-  AFE_VERSION="1.1.5"
+  AFE_VERSION="1.1.6"
 else
   REMOTE_VER="$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/version 2>/dev/null | tr -d '[:space:]' || true)"
   if [ -n "$REMOTE_VER" ]; then
-    AFE_VERSION="1.1.5"
+    AFE_VERSION="1.1.6"
   fi
 fi
 echo "$AFE_VERSION" > "$HOME/.afe_version" 2>/dev/null || true
@@ -193,6 +193,7 @@ RULES:
    - Resolve the root cause (environment, dependencies, permissions, resources, syntax).
 2. When answering user requests, questions, or queries:
    - Directly execute the user request using the provided context or piped data.
+   - When asked to write a git commit message: synthesize high-level architectural goals into conventional commit format (title, blank line, strictly 4-5 high-impact bullet points, no micro-bullets). Do NOT list each file individually.
    - Match the requested format and language strictly.
    - Output clean plain text without markdown backticks, bold asterisks, or headings. Use '-' for bullet points.
 3. Default to Linux (GNU tools) syntax.
@@ -266,29 +267,67 @@ if [[ -f "\$HOME/.env" ]]; then
   export \$(grep -v '^#' "\$HOME/.env" | xargs)
 fi
 
+# Clean up stale session logs older than 1 day
+find /tmp -maxdepth 1 -name "afe_session_*.log" -mtime +1 -exec rm -f {} + 2>/dev/null || true
+
+# Session output auto-buffer (works on VS Code, Cursor, Zed, Terminal, etc.)
+if [[ -z "\$AFE_SESSION_LOGGED" && -t 0 && -t 1 && "\$TERM" != "dumb" && -z "\$INSIDE_EMACS" ]]; then
+  export AFE_SESSION_LOGGED=1
+  export AFE_SESSION_LOG="/tmp/afe_session_\${$}_$(date +%s).log"
+  touch "\$AFE_SESSION_LOG" 2>/dev/null || true
+  trap 'rm -f "\$AFE_SESSION_LOG" 2>/dev/null' EXIT
+  if [[ "\$(uname -s)" == "Darwin" ]]; then
+    exec script -q -F "\$AFE_SESSION_LOG"
+  else
+    exec script -q -f "\$AFE_SESSION_LOG"
+  fi
+fi
+
 # Capture last command
 if [[ -n "\$ZSH_VERSION" ]]; then
   unsetopt nomatch 2>/dev/null || true
   autoload -Uz add-zsh-hook 2>/dev/null || true
+  _AFE_IS_AI_CMD=0
   _save_last_cmd() {
     local cmd="\$1"
     cmd=\$(echo "\$cmd" | head -n 1 | sed 's/^[[:space:]]*//')
     local first_word="\${cmd%% *}"
     case "\$first_word" in
       $CMD_A|$CMD_AL|$CMD_ALT|$CMD_F|$CMD_FL|$CMD_FLT|$CMD_FE|$CMD_E|$CMD_EL|$CMD_Q|$CMD_QL|$CMD_QLT|afe-help|ai-help|ai)
+        _AFE_IS_AI_CMD=1
         ;;
       *)
+        _AFE_IS_AI_CMD=0
         if [[ -n "\$cmd" ]]; then
           export LAST_TERMINAL_CMD="\$cmd"
+          if [[ -n "\$AFE_SESSION_LOG" && -f "\$AFE_SESSION_LOG" ]]; then
+            export _AFE_LAST_CMD_START_LINE=\$(wc -l < "\$AFE_SESSION_LOG" 2>/dev/null | tr -d ' ' || echo 1)
+          fi
         fi
         ;;
     esac
   }
   add-zsh-hook preexec _save_last_cmd 2>/dev/null || true
+
+  _save_last_cmd_end() {
+    if [[ "\$_AFE_IS_AI_CMD" != "1" && -n "\$AFE_SESSION_LOG" && -f "\$AFE_SESSION_LOG" ]]; then
+      export _AFE_LAST_CMD_END_LINE=\$(wc -l < "\$AFE_SESSION_LOG" 2>/dev/null | tr -d ' ' || echo 1)
+    fi
+  }
+  add-zsh-hook precmd _save_last_cmd_end 2>/dev/null || true
 fi
 
 _get_terminal_screen_buffer() {
-  if [[ -n "\$TMUX" ]]; then
+  if [[ -n "\$AFE_SESSION_LOG" && -f "\$AFE_SESSION_LOG" ]]; then
+    local start_line="\${_AFE_LAST_CMD_START_LINE:-1}"
+    local total_lines=\$(wc -l < "\$AFE_SESSION_LOG" 2>/dev/null | tr -d ' ' || echo 1)
+    local end_line="\${_AFE_LAST_CMD_END_LINE:-\$total_lines}"
+    if [[ \$end_line -ge \$start_line ]]; then
+      sed -n "\${start_line},\${end_line}p" "\$AFE_SESSION_LOG" | tail -n 60 | sed -E \$'s/\x1B\\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'
+    else
+      tail -n 60 "\$AFE_SESSION_LOG" | sed -E \$'s/\x1B\\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'
+    fi
+  elif [[ -n "\$TMUX" ]]; then
     tmux capture-pane -p 2>/dev/null | tail -n 30
   elif [[ -f "\$HOME/.zsh_history" ]]; then
     tail -n 30 "\$HOME/.zsh_history" | sed 's/^: [0-9]*:[0-9];//' 2>/dev/null
@@ -301,6 +340,11 @@ _get_terminal_screen_buffer() {
 
 _build_fix_prompt() {
   local query="\$*"
+  local stdin_data=""
+  if [ ! -t 0 ]; then
+    stdin_data=\$(head -n 500)
+  fi
+
   local last_cmd="\$LAST_TERMINAL_CMD"
 
   if [[ -z "\$last_cmd" ]]; then
@@ -314,7 +358,10 @@ _build_fix_prompt() {
     fi
   fi
 
-  local output_data=\$(_get_terminal_screen_buffer | sed -E \$'s/\x1B\\[[0-9;]*[a-zA-Z]//g')
+  local output_data="\$stdin_data"
+  if [[ -z "\$output_data" ]]; then
+    output_data=\$(_get_terminal_screen_buffer | sed -E \$'s/\x1B\\[[0-9;]*[a-zA-Z]//g')
+  fi
 
   if [[ -z "\$query" ]]; then
     echo "Recent terminal context:
@@ -336,18 +383,27 @@ _build_query_prompt() {
   local query="\$*"
   local stdin_data=""
   if [ ! -t 0 ]; then
-    stdin_data=\$(head -n 500)
+    stdin_data=\$(head -n 1200)
   fi
 
   if [[ -n "\$stdin_data" ]]; then
+    local effective_query="\$query"
+    if [[ -z "\$effective_query" ]]; then
+      if echo "\$stdin_data" | grep -q -E '(diff --git|index [0-9a-f]+\.\.[0-9a-f]+|Changes not staged for commit|Changes to be committed)'; then
+        effective_query="Write a high-level concise conventional commit message for these git changes"
+      else
+        effective_query="Analyze and summarize this piped data concisely"
+      fi
+    fi
+
     echo "[USER REQUEST / INSTRUCTION]
-\$query
+\$effective_query
 
 [PIPED INPUT DATA]
 \$stdin_data
 
 [REMINDER: FULFILL THIS USER REQUEST IN THE REQUESTED LANGUAGE]
-\$query"
+\$effective_query"
   else
     local last_cmd="\$LAST_TERMINAL_CMD"
     if [[ -z "\$last_cmd" ]]; then
@@ -616,31 +672,38 @@ import sys, json, time
 decoder = json.JSONDecoder()
 buf = ''
 def smooth_print(text):
-    for char in text:
-        sys.stdout.write(char)
-        sys.stdout.flush()
-        time.sleep(0.004)
-while True:
-    chunk = sys.stdin.read(1)
-    if not chunk:
-        break
-    buf += chunk
-    buf_stripped = buf.lstrip('[\r\n, ]')
-    if not buf_stripped:
-        continue
     try:
-        obj, index = decoder.raw_decode(buf_stripped)
-        buf = buf_stripped[index:]
-        if 'candidates' in obj and obj['candidates']:
-            parts = obj['candidates'][0].get('content', {}).get('parts', [])
-            for p in parts:
-                if 'text' in p:
-                    smooth_print(p['text'])
-        elif 'error' in obj:
-            print(f\"\nAPI Error: {obj['error'].get('message', obj['error'])}\", flush=True)
-    except json.JSONDecodeError:
-        pass
-print()
+        for char in text:
+            sys.stdout.write(char)
+            sys.stdout.flush()
+            time.sleep(0.004)
+    except (BrokenPipeError, IOError):
+        sys.exit(0)
+
+try:
+    while True:
+        chunk = sys.stdin.read(1)
+        if not chunk:
+            break
+        buf += chunk
+        buf_stripped = buf.lstrip('[\r\n, ]')
+        if not buf_stripped:
+            continue
+        try:
+            obj, index = decoder.raw_decode(buf_stripped)
+            buf = buf_stripped[index:]
+            if 'candidates' in obj and obj['candidates']:
+                parts = obj['candidates'][0].get('content', {}).get('parts', [])
+                for p in parts:
+                    if 'text' in p:
+                        smooth_print(p['text'])
+            elif 'error' in obj:
+                print(f\"\nAPI Error: {obj['error'].get('message', obj['error'])}\", flush=True)
+        except json.JSONDecodeError:
+            pass
+    print()
+except (BrokenPipeError, IOError):
+    sys.exit(0)
 "
 }
 
@@ -730,7 +793,7 @@ $CMD_Q() {
     return 1
   fi
   local prompt="\$(_build_query_prompt "\$*")"
-  local sys_prompt="You are an expert DevOps assistant and software engineer.
+  local sys_prompt="You are a Principal Software Engineer and DevOps architect.
 LANGUAGE RULES (STRICT & ABSOLUTE):
 - If the user request mentions Vietnamese / tiếng Việt, you MUST output 100% in Vietnamese (including commit title and all bullet points).
 - If the user request mentions English / tiếng Anh, you MUST output 100% in English.
@@ -738,9 +801,18 @@ LANGUAGE RULES (STRICT & ABSOLUTE):
 
 CORE INSTRUCTIONS:
 - Directly execute the exact USER REQUEST using the provided terminal context / piped data.
-- If asked to write a git commit message, output ONLY the conventional commit message (1 title line, 1 empty line, bullet points description). Never output intro analysis or section headers.
-- If asked a technical question or comparison, answer directly with crisp bullet points.
-- STRICT FORMAT: NO greetings, NO intro fluff, NO boilerplate. STRICTLY NO markdown headings, NO bold asterisks, NO code blocks. Output clean terminal plain text."
+
+GIT COMMIT MESSAGE RULES (CRITICAL):
+- When asked to write a commit message (or if piped data is a git diff/status):
+  1. Title line: Format '<type>(<optional-scope>): <summary>' (lowercase, under 72 chars, imperative mood). Choose the single most accurate conventional commit type for the entire change: 'feat', 'fix', 'refactor', 'perf', 'chore', 'docs', 'test'.
+  2. Blank line: Exactly one blank line between title and bullet points.
+  3. High-Level Architectural Synthesis: Group related code changes by their overarching engineering goal (e.g. Docker environment, Auth refactoring, DB schema migration, API error handling). NEVER list individual files, line numbers, or minute code edits. Strictly consolidate related changes into a maximum of 4 to 5 high-impact bullet points. Do not split one feature into multiple micro-bullets.
+  4. Bullet format: Use '- ' followed by an imperative capitalized verb (e.g., '- Implement...', '- Refactor...', '- Fix...', '- Optimize...', '- Enable...'). Do NOT prepend redundant sub-types like 'feat(file):' or 'chore(file):' on each bullet point.
+  5. Output ONLY the raw commit message text. Absolutely NO intro/outro, NO analysis explanations, NO markdown code blocks.
+
+GENERAL QUERY RULES:
+- If asked a technical question, debugging analysis, or comparison, answer directly with crisp, actionable bullet points.
+- STRICT FORMAT: NO greetings, NO intro fluff, NO boilerplate. STRICTLY NO markdown headings (#), NO bold asterisks (**), NO code fences. Output clean terminal plain text."
   _call_gemini_api "\$sys_prompt" "\$prompt"
 }
 EOF
