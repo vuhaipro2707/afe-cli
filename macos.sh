@@ -2,13 +2,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo ".")"
-AFE_VERSION="1.1.6"
+AFE_VERSION="1.1.7"
 if [ -f "$SCRIPT_DIR/version" ]; then
-  AFE_VERSION="1.1.6"
+  AFE_VERSION="1.1.7"
 else
   REMOTE_VER="$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/version 2>/dev/null | tr -d '[:space:]' || true)"
   if [ -n "$REMOTE_VER" ]; then
-    AFE_VERSION="1.1.6"
+    AFE_VERSION="1.1.7"
   fi
 fi
 echo "$AFE_VERSION" > "$HOME/.afe_version" 2>/dev/null || true
@@ -23,44 +23,93 @@ fi
 
 echo "=== [2/4] Installation options ==="
 
-# Ask to install Ollama Local
-read -r -p "Do you want to install Local AI (Ollama)? (y/N): " INSTALL_OLLAMA
-INSTALL_OLLAMA_FLAG=false
-if [[ "$INSTALL_OLLAMA" =~ ^[Yy]$ ]]; then
-  INSTALL_OLLAMA_FLAG=true
+AFE_CONFIG_FILE="$HOME/.afe_config"
+USE_SAVED_CONFIG=false
+
+SAVED_INSTALL_OLLAMA="false"
+SAVED_INSTALL_GEMINI="false"
+SAVED_AI_LANG="English"
+SAVED_BASE_MODEL="gemma4:e2b"
+SAVED_CLOUD_MODEL="gemma-4-26b-a4b-it"
+
+if [ -f "$AFE_CONFIG_FILE" ]; then
+  # shellcheck source=/dev/null
+  source "$AFE_CONFIG_FILE" 2>/dev/null || true
+  SAVED_INSTALL_OLLAMA="${INSTALL_OLLAMA:-false}"
+  SAVED_INSTALL_GEMINI="${INSTALL_GEMINI:-false}"
+  SAVED_AI_LANG="${AI_RESPONSE_LANG:-English}"
+  SAVED_BASE_MODEL="${OLLAMA_MODEL:-gemma4:e2b}"
+  SAVED_CLOUD_MODEL="${GEMINI_MODEL:-gemma-4-26b-a4b-it}"
+
+  echo "📋 Found existing configuration:"
+  echo "  • Local AI (Ollama) : $([ "$SAVED_INSTALL_OLLAMA" = true ] && echo "Enabled ($SAVED_BASE_MODEL)" || echo "Disabled")"
+  echo "  • Gemini Cloud      : $([ "$SAVED_INSTALL_GEMINI" = true ] && echo "Enabled ($SAVED_CLOUD_MODEL)" || echo "Disabled")"
+  echo "  • AI Language       : $SAVED_AI_LANG"
+  echo ""
+  read -r -p "Use existing configuration? [Y/n] (Default: Y): " CONFIRM_SAVED
+  if [[ -z "$CONFIRM_SAVED" || "$CONFIRM_SAVED" =~ ^[Yy]$ ]]; then
+    USE_SAVED_CONFIG=true
+    INSTALL_OLLAMA_FLAG="$SAVED_INSTALL_OLLAMA"
+    INSTALL_GEMINI_FLAG="$SAVED_INSTALL_GEMINI"
+    AI_RESPONSE_LANG="$SAVED_AI_LANG"
+    BASE_MODEL="$SAVED_BASE_MODEL"
+    USER_GEMINI_MODEL="$SAVED_CLOUD_MODEL"
+  fi
 fi
 
-# Ask to install Gemini Cloud API
-read -r -p "Do you want to install Gemini Cloud API? (y/N): " INSTALL_GEMINI
-INSTALL_GEMINI_FLAG=false
-if [[ "$INSTALL_GEMINI" =~ ^[Yy]$ ]]; then
-  INSTALL_GEMINI_FLAG=true
-fi
+if [ "$USE_SAVED_CONFIG" = false ]; then
+  # Ask to install Ollama Local
+  local_ollama_prompt="y/N"
+  [ "$SAVED_INSTALL_OLLAMA" = true ] && local_ollama_prompt="Y/n"
+  read -r -p "Do you want to install Local AI (Ollama)? ($local_ollama_prompt): " INSTALL_OLLAMA
+  if [ "$SAVED_INSTALL_OLLAMA" = true ] && [ -z "$INSTALL_OLLAMA" ]; then
+    INSTALL_OLLAMA="y"
+  fi
+  INSTALL_OLLAMA_FLAG=false
+  if [[ "$INSTALL_OLLAMA" =~ ^[Yy]$ ]]; then
+    INSTALL_OLLAMA_FLAG=true
+  fi
 
-if [ "$INSTALL_OLLAMA_FLAG" = false ] && [ "$INSTALL_GEMINI_FLAG" = false ]; then
-  echo "⚠️  No components selected for installation. Exiting script."
-  exit 0
-fi
+  # Ask to install Gemini Cloud API
+  local_gemini_prompt="y/N"
+  [ "$SAVED_INSTALL_GEMINI" = true ] && local_gemini_prompt="Y/n"
+  read -r -p "Do you want to install Gemini Cloud API? ($local_gemini_prompt): " INSTALL_GEMINI
+  if [ "$SAVED_INSTALL_GEMINI" = true ] && [ -z "$INSTALL_GEMINI" ]; then
+    INSTALL_GEMINI="y"
+  fi
+  INSTALL_GEMINI_FLAG=false
+  if [[ "$INSTALL_GEMINI" =~ ^[Yy]$ ]]; then
+    INSTALL_GEMINI_FLAG=true
+  fi
 
-# Ask for AI Response Language
-echo ""
-echo "Select AI explanation language (for e, fe, el, Q&A modes):"
-echo "  1) English (default)"
-echo "  2) Vietnamese (Tiếng Việt)"
-read -r -p "Enter choice [1/2 or custom language, default: 1]: " USER_LANG_INPUT
-case "$USER_LANG_INPUT" in
-  2|[Vv]ietnamese|[Vv]i)
-    AI_RESPONSE_LANG="Vietnamese"
-    ;;
-  1|[Ee]nglish|[Ee]n|"")
-    AI_RESPONSE_LANG="English"
-    ;;
-  *)
-    AI_RESPONSE_LANG="$USER_LANG_INPUT"
-    ;;
-esac
-echo "Selected AI Language: $AI_RESPONSE_LANG"
-echo ""
+  if [ "$INSTALL_OLLAMA_FLAG" = false ] && [ "$INSTALL_GEMINI_FLAG" = false ]; then
+    echo "⚠️  No components selected for installation. Exiting script."
+    exit 0
+  fi
+
+  # Ask for AI Response Language
+  echo ""
+  echo "Select AI explanation language (for e, fe, el, Q&A modes):"
+  echo "  1) English"
+  echo "  2) Vietnamese (Tiếng Việt)"
+  default_lang_choice="1"
+  [ "$SAVED_AI_LANG" = "Vietnamese" ] && default_lang_choice="2"
+  read -r -p "Enter choice [1/2 or custom language, default: $default_lang_choice]: " USER_LANG_INPUT
+  USER_LANG_INPUT="${USER_LANG_INPUT:-$default_lang_choice}"
+  case "$USER_LANG_INPUT" in
+    2|[Vv]ietnamese|[Vv]i)
+      AI_RESPONSE_LANG="Vietnamese"
+      ;;
+    1|[Ee]nglish|[Ee]n)
+      AI_RESPONSE_LANG="English"
+      ;;
+    *)
+      AI_RESPONSE_LANG="$USER_LANG_INPUT"
+      ;;
+  esac
+  echo "Selected AI Language: $AI_RESPONSE_LANG"
+  echo ""
+fi
 
 # --- Check command name collisions & fallbacks ---
 echo "--- Checking command name collisions ---"
@@ -123,8 +172,12 @@ if [ "$INSTALL_OLLAMA_FLAG" = true ]; then
     sleep 3
   fi
 
-  read -r -p "Enter Ollama Base Model name [default: gemma4:e2b]: " INPUT_MODEL
-  BASE_MODEL="${INPUT_MODEL:-gemma4:e2b}"
+  if [ "$USE_SAVED_CONFIG" = false ]; then
+    read -r -p "Enter Ollama Base Model name [default: ${SAVED_BASE_MODEL:-gemma4:e2b}]: " INPUT_MODEL
+    BASE_MODEL="${INPUT_MODEL:-${SAVED_BASE_MODEL:-gemma4:e2b}}"
+  else
+    BASE_MODEL="${SAVED_BASE_MODEL:-gemma4:e2b}"
+  fi
 
   echo "Pulling base model: $BASE_MODEL..."
   ollama pull "$BASE_MODEL"
@@ -197,21 +250,29 @@ if [ "$INSTALL_GEMINI_FLAG" = true ]; then
     EXISTING_KEY=$(grep -E '^GEMINI_API_KEY=' "$ENV_FILE" | cut -d '=' -f2- | tr -d '"' | tr -d "'")
   fi
 
-  if [[ -n "$EXISTING_KEY" ]]; then
-    read -r -p "Found GEMINI_API_KEY in ~/.env. Do you want to update it? (y/N): " CHANGE_KEY
-    if [[ "$CHANGE_KEY" =~ ^[Yy]$ ]]; then
-      USER_GEMINI_KEY=""
-    else
-      USER_GEMINI_KEY="$EXISTING_KEY"
+  if [ "$USE_SAVED_CONFIG" = false ]; then
+    if [[ -n "$EXISTING_KEY" ]]; then
+      read -r -p "Found GEMINI_API_KEY in ~/.env. Do you want to update it? (y/N): " CHANGE_KEY
+      if [[ "$CHANGE_KEY" =~ ^[Yy]$ ]]; then
+        USER_GEMINI_KEY=""
+      else
+        USER_GEMINI_KEY="$EXISTING_KEY"
+      fi
     fi
-  fi
 
-  while [[ -z "$USER_GEMINI_KEY" ]]; do
-    read -r -p "Enter your GEMINI_API_KEY (required): " USER_GEMINI_KEY
-    if [[ -z "$USER_GEMINI_KEY" ]]; then
-      echo "⚠️  API Key cannot be empty. Please try again!"
-    fi
-  done
+    while [[ -z "$USER_GEMINI_KEY" ]]; do
+      read -r -p "Enter your GEMINI_API_KEY (required): " USER_GEMINI_KEY
+      if [[ -z "$USER_GEMINI_KEY" ]]; then
+        echo "⚠️  API Key cannot be empty. Please try again!"
+      fi
+    done
+
+    read -r -p "Enter GEMINI_MODEL_ID [default: ${SAVED_CLOUD_MODEL:-gemma-4-26b-a4b-it}]: " INPUT_CLOUD_MODEL
+    USER_GEMINI_MODEL="${INPUT_CLOUD_MODEL:-${SAVED_CLOUD_MODEL:-gemma-4-26b-a4b-it}}"
+  else
+    USER_GEMINI_KEY="$EXISTING_KEY"
+    USER_GEMINI_MODEL="${SAVED_CLOUD_MODEL:-gemma-4-26b-a4b-it}"
+  fi
 
   touch "$ENV_FILE"
   if grep -q "^GEMINI_API_KEY=" "$ENV_FILE"; then
@@ -221,10 +282,17 @@ if [ "$INSTALL_GEMINI_FLAG" = true ]; then
   fi
   chmod 600 "$ENV_FILE"
   echo "✅ Successfully saved GEMINI_API_KEY securely to $ENV_FILE (chmod 600)"
-
-  read -r -p "Enter GEMINI_MODEL_ID [default: gemma-4-26b-a4b-it]: " INPUT_CLOUD_MODEL
-  USER_GEMINI_MODEL="${INPUT_CLOUD_MODEL:-gemma-4-26b-a4b-it}"
 fi
+
+# Save configuration for future re-runs and one-click updates
+cat <<CONFIG_EOF > "$AFE_CONFIG_FILE"
+INSTALL_OLLAMA=$INSTALL_OLLAMA_FLAG
+INSTALL_GEMINI=$INSTALL_GEMINI_FLAG
+AI_RESPONSE_LANG="$AI_RESPONSE_LANG"
+OLLAMA_MODEL="${BASE_MODEL:-gemma4:e2b}"
+GEMINI_MODEL="${USER_GEMINI_MODEL:-gemma-4-26b-a4b-it}"
+CONFIG_EOF
+chmod 600 "$AFE_CONFIG_FILE"
 
 echo "=== [3/4] Updating configuration in ~/.zshrc ==="
 
@@ -451,10 +519,43 @@ afe-help() {
   ℹ️  Help & Info:
     afe-help          Display this help message
     afe-version       Display current installed version
-    afe-update        Update AFE CLI to latest version
+    afe-update        Update AFE CLI to latest version (or 'afe update')
+    afe-uninstall     Uninstall AFE CLI completely (or 'afe uninstall')
 ────────────────────────────────────────────────────────────────────────────
 HELP_EOF
+  _check_afe_update
 }
+
+_check_afe_update() {
+  local last_check_file="\$HOME/.afe_last_update_check"
+  local remote_ver_file="\$HOME/.afe_remote_version"
+  local now
+  now=\$(date +%s 2>/dev/null || echo 0)
+  local last_check=0
+  if [[ -f "\$last_check_file" ]]; then
+    last_check=\$(cat "\$last_check_file" 2>/dev/null || echo 0)
+  fi
+
+  if (( now - last_check > 86400 )); then
+    echo "\$now" > "\$last_check_file" 2>/dev/null || true
+    (
+      local r_ver
+      r_ver=\$(curl -fsSL --max-time 2 https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/version 2>/dev/null | tr -d '[:space:]')
+      if [[ -n "\$r_ver" ]]; then
+        echo "\$r_ver" > "\$remote_ver_file" 2>/dev/null || true
+      fi
+    ) &! 2>/dev/null || true
+  fi
+
+  if [[ -f "\$remote_ver_file" ]]; then
+    local r_ver
+    r_ver=\$(cat "\$remote_ver_file" 2>/dev/null | tr -d '[:space:]')
+    if [[ -n "\$r_ver" && "\$r_ver" != "\$AFE_CLI_VERSION" ]]; then
+      printf "\n\033[1;33m💡 [AFE Update] New version v%s available! (Current: v%s). Run 'afe update' to upgrade.\033[0m\n" "\$r_ver" "\$AFE_CLI_VERSION"
+    fi
+  fi
+}
+
 afe() {
   case "\$1" in
     -v|--version|version)
@@ -462,6 +563,9 @@ afe() {
       ;;
     -u|--update|update)
       afe-update
+      ;;
+    --uninstall|uninstall)
+      afe-uninstall
       ;;
     *)
       afe-help
@@ -473,12 +577,18 @@ alias ai=afe
 
 afe-version() {
   echo "🚀 AFE CLI v$AFE_VERSION"
+  _check_afe_update
 }
 alias afe-v=afe-version
 
 afe-update() {
   echo "🔄 Checking and updating AFE CLI..."
   /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/install.sh)" -- install
+}
+
+afe-uninstall() {
+  echo "🗑️  Starting AFE CLI Uninstallation..."
+  /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/install.sh)" -- uninstall
 }
 EOF
 

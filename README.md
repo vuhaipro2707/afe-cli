@@ -85,8 +85,9 @@ Run `afe-help` (or `ai-help` / `ai`) at any time to view the interactive manual:
 
   ℹ️  Help & Info:
     afe-help          Display this help message
-    afe-version       Display installed version (or 'afe -v')
-    afe-update        Update AFE CLI to latest release
+    afe-version       Display current installed version (or 'afe -v')
+    afe-update        Update AFE CLI to latest version (or 'afe update')
+    afe-uninstall     Uninstall AFE CLI completely (or 'afe uninstall')
 ────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -162,6 +163,7 @@ Your settings are securely stored in your shell profile (`~/.zshrc` or `~/.bashr
 | `GEMINI_API_KEY` | `~/.env` | Your Google Gemini API Key (chmod 600) |
 | `GEMINI_MODEL_ID` | `~/.zshrc` / `~/.bashrc` | Cloud model (default: `gemma-4-26b-a4b-it`) |
 | `AI_RESPONSE_LANG` | `~/.zshrc` / `~/.bashrc` | Response language (`English`, `Vietnamese`, etc.) |
+| `~/.afe_config` | `~/.afe_config` | Saved installation options for 1-click updates & repairs |
 
 ---
 
@@ -182,6 +184,12 @@ Bump version with 1 command (automatically updates `version`, shell files, creat
 To completely remove AFE CLI and restore your shell to its original state:
 
 ```bash
+# If AFE CLI is already installed in your terminal:
+afe-uninstall
+# or
+afe uninstall
+
+# Or via 1-line curl:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vuhaipro2707/afe-cli/main/install.sh)" -- uninstall
 ```
 

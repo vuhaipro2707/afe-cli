@@ -57,8 +57,8 @@ if [ -f "$ENV_FILE" ]; then
   fi
 fi
 
-# 3. Clean up version tracking file
-rm -f "$HOME/.afe_version"
+# 3. Clean up version tracking & config files
+rm -f "$HOME/.afe_version" "$HOME/.afe_config" "$HOME/.afe_last_update_check" "$HOME/.afe_remote_version"
 
 echo "=== [3/3] Uninstallation Complete! ==="
 echo "To apply changes in your current terminal session, run:"
